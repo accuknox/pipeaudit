@@ -100,6 +100,24 @@ Export the token:
 export ADO_AUDIT_TOKEN=...
 ```
 
+
+### GITLAB — PERSONAL ACCESS TOKEN SETUP:
+  Create a Personal Access Token (PAT) with read_api scope.
+
+  1. Go to: https://gitlab.com/-/user_settings/personal_access_tokens
+
+  2. Create a token with these scopes:
+       read_api ......... Read       (needed to read groups, projects,
+                                      pipelines, and settings)
+
+  3. Set an appropriate expiration (30-90 days recommended).
+
+  4. Click 'Create personal access token' and export it:
+       export GL_AUDIT_TOKEN=glpat-...
+
+  5. Run the audit:
+       pipeaudit --platform gitlab --org my-group --output report.json
+     
 ## Usage
 
 ### GitHub
