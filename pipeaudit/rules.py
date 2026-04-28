@@ -210,11 +210,19 @@ def check_script_injection(
 
 _TRUSTED_OWNERS = {"actions", "github", "azure"}
 
+# Version-tag pattern: starts with an optional 'v' followed by a digit (e.g. v1, v2.3.0, 1.0.0).
+# Anything else that isn't a SHA is treated as a branch-like ref (e.g. master, main, latest).
+_VERSION_TAG_RE = re.compile(r"^v?\d")
+
 
 def check_unpinned_actions(
     workflow_name: str, workflow: dict, repo_meta: dict
 ) -> list[Finding]:
     findings = []
+
+    # Own-org actions are not an external supply chain threat — treat them as trusted.
+    org = repo_meta.get("full_name", "/").split("/")[0].lower()
+    trusted_owners = _TRUSTED_OWNERS | {org}
 
     for job_id, job in _get_jobs(workflow).items():
         for i, step in enumerate(job.get("steps") or []):
@@ -245,19 +253,39 @@ def check_unpinned_actions(
             is_sha_pinned = bool(re.fullmatch(r"[0-9a-f]{40}", ref))
 
             if not is_sha_pinned:
-                severity = Severity.MEDIUM
-                if owner.lower() not in _TRUSTED_OWNERS:
+                is_version_tag = bool(_VERSION_TAG_RE.match(ref))
+
+                if not is_version_tag:
+                    # Branch-like ref (master, main, latest, …) — highest risk:
+                    # branches are continuously moving and can be updated at any time.
                     severity = Severity.HIGH
+                    ref_context = (
+                        f"'{ref}' is a branch, not a version tag. Branches are "
+                        f"continuously updated and can introduce malicious code at any push. "
+                    )
+                elif owner.lower() not in trusted_owners:
+                    # Third-party version tag — still mutable but lower immediate risk.
+                    severity = Severity.HIGH
+                    ref_context = (
+                        f"'{ref}' is a mutable version tag from a third-party owner. "
+                        f"Tags can be force-pushed to point at a different commit. "
+                    )
+                else:
+                    # Trusted/own-org version tag — flag for awareness but lower risk.
+                    severity = Severity.MEDIUM
+                    ref_context = (
+                        f"'{ref}' is a mutable version tag. Tags can be force-pushed "
+                        f"to point at a different commit. "
+                    )
 
                 findings.append(Finding(
                     rule_id="GHA003",
                     severity=severity.value,
                     title="Action not pinned to a full commit SHA",
                     description=(
-                        f"Action '{uses}' is pinned to a mutable ref '{ref}' "
-                        f"instead of a full commit SHA. Tags and branches can be "
-                        f"force-pushed, allowing supply chain attacks. Pin to a "
-                        f"specific commit SHA for third-party actions."
+                        f"Action '{uses}' is not pinned to a full commit SHA. "
+                        f"{ref_context}"
+                        f"Pin to a specific commit SHA to prevent supply chain attacks."
                     ),
                     workflow_file=workflow_name,
                     job=job_id,
