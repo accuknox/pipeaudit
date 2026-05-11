@@ -144,43 +144,72 @@ class TestScriptInjection:
 # ---------------------------------------------------------------------------
 
 class TestUnpinnedActions:
-    def test_detects_tag_ref(self):
+    def test_trusted_owner_tag_ref_is_medium(self):
         wf = {
             "on": "push",
-            "jobs": {
-                "build": {
-                    "steps": [{"uses": "actions/checkout@v4"}]
-                }
-            },
+            "jobs": {"build": {"steps": [{"uses": "actions/checkout@v4"}]}},
         }
         findings = check_unpinned_actions("ci.yml", wf, _public_repo())
         assert len(findings) == 1
         assert findings[0].rule_id == "GHA003"
+        assert findings[0].severity == "medium"
 
     def test_sha_pinned_no_finding(self):
         wf = {
             "on": "push",
             "jobs": {
                 "build": {
-                    "steps": [
-                        {
-                            "uses": "actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29"
-                        }
-                    ]
+                    "steps": [{"uses": "actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29"}]
                 }
             },
         }
         findings = check_unpinned_actions("ci.yml", wf, _public_repo())
         assert len(findings) == 0
 
-    def test_third_party_unpinned_is_high(self):
+    def test_third_party_branch_ref_is_high(self):
         wf = {
             "on": "push",
-            "jobs": {
-                "build": {
-                    "steps": [{"uses": "unknown-owner/action@main"}]
-                }
-            },
+            "jobs": {"build": {"steps": [{"uses": "unknown-owner/action@main"}]}},
+        }
+        findings = check_unpinned_actions("ci.yml", wf, _public_repo())
+        assert len(findings) == 1
+        assert findings[0].severity == "high"
+
+    def test_third_party_version_tag_is_high(self):
+        wf = {
+            "on": "push",
+            "jobs": {"build": {"steps": [{"uses": "unknown-owner/action@v2"}]}},
+        }
+        findings = check_unpinned_actions("ci.yml", wf, _public_repo())
+        assert len(findings) == 1
+        assert findings[0].severity == "high"
+
+    def test_branch_ref_is_high_even_for_trusted_owner(self):
+        # Branches are continuously moving — always HIGH regardless of owner trust.
+        wf = {
+            "on": "push",
+            "jobs": {"build": {"steps": [{"uses": "actions/checkout@master"}]}},
+        }
+        findings = check_unpinned_actions("ci.yml", wf, _public_repo())
+        assert len(findings) == 1
+        assert findings[0].severity == "high"
+
+    def test_own_org_version_tag_is_medium(self):
+        # Own-org actions are not an external supply chain risk.
+        wf = {
+            "on": "push",
+            "jobs": {"build": {"steps": [{"uses": "org/some-action@v1"}]}},
+        }
+        # _public_repo() has full_name "org/repo", so "org" is the current org.
+        findings = check_unpinned_actions("ci.yml", wf, _public_repo())
+        assert len(findings) == 1
+        assert findings[0].severity == "medium"
+
+    def test_own_org_branch_ref_is_high(self):
+        # Even own-org actions on a branch are HIGH — branches are mutable.
+        wf = {
+            "on": "push",
+            "jobs": {"build": {"steps": [{"uses": "org/some-action@main"}]}},
         }
         findings = check_unpinned_actions("ci.yml", wf, _public_repo())
         assert len(findings) == 1
@@ -189,11 +218,7 @@ class TestUnpinnedActions:
     def test_local_action_no_finding(self):
         wf = {
             "on": "push",
-            "jobs": {
-                "build": {
-                    "steps": [{"uses": "./.github/actions/my-action"}]
-                }
-            },
+            "jobs": {"build": {"steps": [{"uses": "./.github/actions/my-action"}]}},
         }
         findings = check_unpinned_actions("ci.yml", wf, _public_repo())
         assert len(findings) == 0

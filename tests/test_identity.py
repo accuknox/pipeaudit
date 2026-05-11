@@ -234,6 +234,40 @@ class TestAuditIdentity:
         assert iam006[0]["user"] == "external-user"
 
     @responses.activate
+    def test_org_member_not_flagged_as_outside_collaborator(self):
+        """Org members appearing in repo collaborators must NOT be flagged as outside collaborators.
+
+        Regression test: previously used `login not in all_logins` which would flag
+        everyone if list_org_members returned empty (e.g. due to a silent 403).
+        Now uses the authoritative outside_collaborators endpoint instead.
+        """
+        org = "testorg"
+        _setup_org_responses(org, admin_count=2)
+
+        # member-0 is an org member who also appears as a direct repo collaborator
+        responses.add(
+            responses.GET,
+            f"{GITHUB_API}/repos/{org}/repo-a/collaborators",
+            json=[
+                {"login": "member-0", "permissions": {"admin": False, "push": True, "pull": True}},
+            ],
+        )
+
+        client = GitHubClient("test-token")
+        repos = [{"full_name": f"{org}/repo-a", "private": False}]
+        result = audit_identity(client, org, repos)
+
+        # member-0 is NOT an outside collaborator
+        repo_collabs = result["repo_access"][0]["collaborators"]
+        member0 = next(c for c in repo_collabs if c["login"] == "member-0")
+        assert member0["is_org_member"] is True
+        assert member0["is_outside_collaborator"] is False
+
+        # No IAM006 for member-0 (they are an org member, not an outside collaborator)
+        iam006_users = [f["user"] for f in result["findings"] if f["rule_id"] == "IAM006"]
+        assert "member-0" not in iam006_users
+
+    @responses.activate
     def test_report_structure(self):
         org = "testorg"
         _setup_org_responses(org)

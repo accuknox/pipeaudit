@@ -174,6 +174,7 @@ def audit_identity(
     # 3. Outside collaborators
     _status("Fetching outside collaborators...")
     outside_collabs = client.list_outside_collaborators(org)
+    outside_collab_logins: set[str] = {c["login"] for c in outside_collabs}
     outside_report = []
     for c in outside_collabs:
         outside_report.append({
@@ -297,7 +298,7 @@ def audit_identity(
                 "login": login,
                 "permission": effective,
                 "is_org_member": login in all_logins,
-                "is_outside_collaborator": login not in all_logins,
+                "is_outside_collaborator": login in outside_collab_logins,
             })
 
             if effective == "admin":
@@ -306,7 +307,7 @@ def audit_identity(
                 write_users.append(login)
 
             # Outside collaborator with write/admin on a repo
-            if login not in all_logins and effective in ("admin", "write", "maintain"):
+            if login in outside_collab_logins and effective in ("admin", "write", "maintain"):
                 sev = "critical" if effective == "admin" and is_public else "high"
                 findings.append({
                     "rule_id": "IAM006",
